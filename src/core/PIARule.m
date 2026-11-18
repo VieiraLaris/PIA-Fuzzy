@@ -1,6 +1,4 @@
 classdef PIARule
-    %PIARule represents a fuzzy rule
-
     properties (SetAccess = private)
         ID string
     end
@@ -12,8 +10,6 @@ classdef PIARule
     
     methods
         function obj = PIARule(id, antecedent, consequent)
-            % Construtor
-
             obj.ID = id;
             obj.Antecedent = antecedent;
             obj.Consequent = consequent;

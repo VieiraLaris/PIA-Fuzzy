@@ -1,4 +1,4 @@
-function [output]=fuzzyout(input,nvar,nse,param_in,defe,nss,param_out,defs,rb,nat) % a,s (nessa ordem)
+function [output]=fuzzyout(input,nvar,nse,param_in,defe,nss,param_out,defs,rb,nat,tnorm,snorm) % a,s (nessa ordem)
 
 % Graus de pertinência e cálculo dos contribuintes 
 gp=zeros(1,length(defe)); %% grau de pertinencia
@@ -60,14 +60,27 @@ for i=1:length(rb)
         else
             outint(j) = outcontr(aux,rb(i),2);
         end
-        w(i)=w(i)*gp(aux);
+        switch tnorm   %%%%%% AND
+            case 'min'
+                w(i) = min(w(i), gp(aux));
+
+            case 'prod'
+                w(i) = w(i) * gp(aux);
+        end
     end
     resp(i)=w(i)*sum(outint)/nvar;
 end
 for j=1:nss
     for i=1:length(rb)
         if j==rb(i)
-            W(j)=max(W(j),w(i));
+            switch snorm %%%%%% OR
+                case 'max'
+                    W(j) = max(W(j), w(i));
+
+                case 'sum'
+                    W(j) = W(j) + w(i);
+                    W(j) = min(W(j),1);
+            end
             Wsum(j)=Wsum(j)+w(i);
             RESP(j)=RESP(j)+resp(i);
         end

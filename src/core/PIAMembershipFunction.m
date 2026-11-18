@@ -1,6 +1,4 @@
 classdef PIAMembershipFunction
-    % PIAMembershipFunction represents a membership function
-
     properties (SetAccess = private)
         ID string
     end
@@ -19,7 +17,6 @@ classdef PIAMembershipFunction
             obj.Parameters = parameters;
         end
         
-        % Atualiza o índice do ID
         function obj = updateID(obj, id)
             obj.ID = id;
         end

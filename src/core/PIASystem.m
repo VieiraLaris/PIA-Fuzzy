@@ -1,14 +1,13 @@
 classdef PIASystem
-    % PIASystem represents a PIA fuzzy system
-    
     properties
-        Name
-        Inputs PIAInput = PIAInput.empty
-        Outputs PIAOutput = PIAOutput.empty
+        Name string
+        Inputs PIAVariable = PIAVariable.empty
+        Outputs PIAVariable = PIAVariable.empty
         Rules PIARule = PIARule.empty
+        TNorm = 'prod'
+        SNorm = 'max'
     end
 
-    % Contadores internos para gerar IDs
     properties (Access = private)
         InputCounter = 0
         OutputCounter = 0
@@ -16,162 +15,281 @@ classdef PIASystem
     end
 
     methods
-        % Construtor
         function obj = PIASystem(name)
             obj.Name = name;
         end
 
-        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        % INPUTS
-        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        %% VARIÁVEIS (INPUT/OUTPUT)
 
-        % Adiciona um Input
-        function obj = addInput(obj, name, range)
-            obj.InputCounter = obj.InputCounter + 1;
-            id = "input_" + string(obj.InputCounter);
-            input = PIAInput(id, name, range);
-            obj.Inputs(end + 1) = input;
+        function obj = addVariable(obj, variableType, name, range)
+            type = PIASystem.normalizeType(variableType);
+            prop = PIASystem.propName(type);
+            counter = PIASystem.counterName(type);
+
+            candidate = obj;
+            candidate.(counter) = candidate.(counter) + 1;
+            id = type + "_" + string(candidate.(counter));
+
+            newVar = PIAVariable(id, name, range);
+            candidate.(prop)(end + 1) = newVar;
+
+            [candidate, proceed] = candidate.confirmRuleBaseDiscard();
+            if ~proceed
+                return;
+            end
+            obj = candidate;
         end
 
-        % Atualiza um Input
-        function obj = updateInput(obj, index, name, range)
-            obj.Inputs(index).Name = name;
-            obj.Inputs(index).Range = range;
+        function obj = updateVariable(obj, variableType, index, options)
+            arguments
+                obj
+                variableType
+                index (1,1) double {mustBeInteger, mustBePositive}
+                options.Name = ""
+                options.Range = []
+            end
+
+            type = PIASystem.normalizeType(variableType);
+            prop = PIASystem.propName(type);
+
+            obj.(prop)(index);
+
+            hasName = ~isempty(options.Name) && strlength(string(options.Name)) > 0;
+            hasRange = ~isempty(options.Range);
+            if ~hasName && ~hasRange
+                error('PIASystem:NoUpdateFields', ...
+                    'Informe pelo menos um campo para atualizar: Name e/ou Range.');
+            end
+
+            if hasName
+                obj.(prop)(index).Name = options.Name;
+            end
+            if hasRange
+                obj.(prop)(index).Range = options.Range;
+            end
         end
 
-        % Remove um Input
-        function obj = deleteInput(obj, index)
-            obj.Inputs(index) = [];
-            obj = obj.updateInputIDs();
+        function obj = deleteVariable(obj, variableType, index)
+            type = PIASystem.normalizeType(variableType);
+            prop = PIASystem.propName(type);
+
+            obj.(prop)(index);   % valida o índice
+
+            candidate = obj;
+            candidate.(prop)(index) = [];
+            candidate = candidate.updateVariableIDs(type);
+
+            [candidate, proceed] = candidate.confirmRuleBaseDiscard();
+            if ~proceed
+                return;
+            end
+            obj = candidate;
         end
 
+        %% MEMBERSHIP FUNCTIONS
 
-        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        % OUTPUTS
-        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-        % Adiciona um Output
-        function obj = addOutput(obj, name, range)
-            obj.OutputCounter = obj.OutputCounter + 1;
-            id = "output_" + string(obj.OutputCounter);
-            output = PIAOutput(id, name, range);
-            obj.Outputs(end + 1) = output;
-        end
-
-        % Atualiza um Output
-        function obj = updateOutput(obj, index, name, range)
-            obj.Outputs(index).Name = name;
-            obj.Outputs(index).Range = range;
-        end
-
-        % Remove um Output
-        function obj = deleteOutput(obj, index)
-            obj.Outputs(index) = [];
-            obj = obj.updateOutputIDs();
-        end
-
-
-        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        % MEMBERSHIP FUNCTIONS
-        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-        % Adiciona uma Membership Function
         function obj = addMF(obj, variableType, variableIndex, type, parameters, name)
-            if variableType == "input"
-                obj.Inputs(variableIndex) = ...
-                    obj.Inputs(variableIndex).addMF( ...
-                    name, type, parameters);
+            vType = PIASystem.normalizeType(variableType);
+            prop = PIASystem.propName(vType);
+            candidate = obj;
 
-            elseif variableType == "output"
-                obj.Outputs(variableIndex) = ...
-                    obj.Outputs(variableIndex).addMF( ...
-                    name, type, parameters);
+            variable = candidate.(prop)(variableIndex);
+            candidate.(prop)(variableIndex) = ...
+                variable.addMF(name, type, parameters);
+
+            [candidate, proceed] = candidate.confirmRuleBaseDiscard();
+            if ~proceed
+                return;
             end
+            obj = candidate;
         end
 
-        % Atualiza uma Membership Function
-        function obj = updateMF(obj, variableType, variableIndex, mfIndex, name, type, parameters)
-            if variableType == "input"
-                obj.Inputs(variableIndex) = ...
-                    obj.Inputs(variableIndex).updateMF( ...
-                    mfIndex, name, type, parameters);
-
-            elseif variableType == "output"
-                obj.Outputs(variableIndex) = ...
-                    obj.Outputs(variableIndex).updateMF( ...
-                    mfIndex, name, type, parameters);
+        function obj = updateMF(obj, variableType, variableIndex, mfIndex, options)
+            arguments
+                obj
+                variableType
+                variableIndex (1,1) double {mustBeInteger, mustBePositive}
+                mfIndex (1,1) double {mustBeInteger, mustBePositive}
+                options.Name = ""
+                options.Type = ""
+                options.Parameters = []
             end
+
+            vType = PIASystem.normalizeType(variableType);
+            prop = PIASystem.propName(vType);
+            candidate = obj;
+
+            variable = candidate.(prop)(variableIndex);
+            currentMF = variable.MembershipFunctions(mfIndex);
+
+            name = currentMF.Name;
+            type = currentMF.Type;
+            parameters = currentMF.Parameters;
+
+            hasName = ~isempty(options.Name) && strlength(string(options.Name)) > 0;
+            hasType = ~isempty(options.Type) && strlength(string(options.Type)) > 0;
+            hasParameters = ~isempty(options.Parameters);
+            if ~hasName && ~hasType && ~hasParameters
+                error('PIASystem:NoUpdateFields', ...
+                    ['Informe pelo menos um campo para atualizar: ' ...
+                     'Name, Type e/ou Parameters.']);
+            end
+
+            if hasName
+                name = options.Name;
+            end
+            if hasType
+                type = options.Type;
+            end
+            if hasParameters
+                parameters = options.Parameters;
+            end
+
+            candidate.(prop)(variableIndex) = ...
+                variable.updateMF(mfIndex, name, type, parameters);
+
+            obj = candidate;
         end
 
-        % Remove uma Membership Function
         function obj = deleteMF(obj, variableType, variableIndex, mfIndex)
-            if variableType == "input"
-                obj.Inputs(variableIndex) = ...
-                    obj.Inputs(variableIndex).deleteMF(mfIndex);
+            vType = PIASystem.normalizeType(variableType);
+            prop = PIASystem.propName(vType);
+            candidate = obj;
 
-            elseif variableType == "output"
-                obj.Outputs(variableIndex) = ...
-                    obj.Outputs(variableIndex).deleteMF(mfIndex);
+            variable = candidate.(prop)(variableIndex);
+            candidate.(prop)(variableIndex) = variable.deleteMF(mfIndex);
+
+            [candidate, proceed] = candidate.confirmRuleBaseDiscard();
+            if ~proceed
+                return;
             end
+            obj = candidate;
         end
 
+        %% RULES
 
-        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-        % RULES
-        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-        % Adiciona uma regra
         function obj = addRule(obj, antecedent, consequent)
             obj.RuleCounter = obj.RuleCounter + 1;
             id = "rule_" + string(obj.RuleCounter);
+
             rule = PIARule(id, antecedent, consequent);
             obj.Rules(end + 1) = rule;
         end
 
-        % Atualiza uma regra
-        function obj = updateRule(obj, index, antecedent, consequent)
-            obj.Rules(index).Antecedent = antecedent;
-            obj.Rules(index).Consequent = consequent;
+        function obj = updateRule(obj, index, options)
+            arguments
+                obj
+                index (1,1) double {mustBeInteger, mustBePositive}
+                options.Antecedent = []
+                options.Consequent = []
+            end
+
+            obj.Rules(index);
+            hasAntecedent = ~isempty(options.Antecedent);
+            hasConsequent = ~isempty(options.Consequent);
+            if ~hasAntecedent && ~hasConsequent
+                error('PIASystem:NoUpdateFields', ...
+                    ['Informe pelo menos um campo para atualizar: ' ...
+                     'Antecedent e/ou Consequent.']);
+            end
+
+            if hasAntecedent
+                obj.Rules(index).Antecedent = options.Antecedent;
+            end
+            if hasConsequent
+                obj.Rules(index).Consequent = options.Consequent;
+            end
         end
 
-        % Remove uma regra
         function obj = deleteRule(obj, index)
             obj.Rules(index) = [];
             obj = obj.updateRuleIDs();
         end
+
+        %% VALIDATION
+
+        function validate(obj)
+            PIAValidator.validate(obj);
+        end
+
+        %% NORMS
+
+        function obj = setNorm(obj, normType, norm)
+            switch lower(string(normType))
+                case "tnorm"
+                    PIAValidator.checkTNorm(norm);
+                    obj.TNorm = norm;
+                case "snorm"
+                    PIAValidator.checkSNorm(norm);
+                    obj.SNorm = norm;
+                otherwise
+                    error('PIASystem:InvalidNormType', ...
+                        'O tipo de norma deve ser "tnorm" ou "snorm".');
+            end
+        end
+    end
+
+    %% MÉTODOS PRIVADOS
+    
+    methods (Static, Access = private)
+
+        function type = normalizeType(variableType)
+            type = lower(string(variableType));
+            if ~ismember(type, ["input", "output"])
+                error('PIASystem:InvalidVariableType', ...
+                    'O tipo de variável deve ser "input" ou "output".');
+            end
+        end
+
+        function name = propName(type)
+            name = upper(extractBefore(type, 2)) + extractAfter(type, 1) + "s";
+        end
+
+        function name = counterName(type)
+            name = upper(extractBefore(type, 2)) + extractAfter(type, 1) + "Counter";
+        end
     end
 
     methods (Access = private)
-        % Atualiza os IDs dos Inputs
-        function obj = updateInputIDs(obj)
-            for i = 1:length(obj.Inputs)
-                obj.Inputs(i) = ...
-                    obj.Inputs(i).updateID( ...
-                    "input_" + string(i));
-            end
 
-            obj.InputCounter = length(obj.Inputs);
+        function obj = updateVariableIDs(obj, variableType)
+            type = PIASystem.normalizeType(variableType);
+            prop = PIASystem.propName(type);
+            counter = PIASystem.counterName(type);
+
+            for i = 1:numel(obj.(prop))
+                obj.(prop)(i) = obj.(prop)(i).updateID(type + "_" + string(i));
+            end
+            obj.(counter) = numel(obj.(prop));
         end
 
-        % Atualiza os IDs dos Outputs
-        function obj = updateOutputIDs(obj)
-            for i = 1:length(obj.Outputs)
-                obj.Outputs(i) = ...
-                    obj.Outputs(i).updateID( ...
-                    "output_" + string(i));
+        function [obj, proceed] = confirmRuleBaseDiscard(obj)
+            proceed = true;
+            if isempty(obj.Rules)
+                return;
             end
 
-            obj.OutputCounter = length(obj.Outputs);
+            choice = questdlg( ...
+                ['Esta alteração exige descartar a base de regras ' ...
+                 'existente. Deseja continuar?'], ...
+                'Confirmar alteração', ...
+                'Continuar', 'Cancelar', 'Cancelar');
+
+            if ~strcmp(choice, 'Continuar')
+                proceed = false;
+                return;
+            end
+
+            obj.Rules = PIARule.empty;
+            obj.RuleCounter = 0;
+            msgbox('A base de regras foi descartada.', ...
+                'Base de regras descartada');
         end
 
-        % Atualiza os IDs das Rules
         function obj = updateRuleIDs(obj)
             for i = 1:length(obj.Rules)
-                obj.Rules(i) = ...
-                    obj.Rules(i).updateID( ...
-                    "rule_" + string(i));
+                obj.Rules(i) = obj.Rules(i).updateID("rule_" + string(i));
             end
-
             obj.RuleCounter = length(obj.Rules);
         end
     end
