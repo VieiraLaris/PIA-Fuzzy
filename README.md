@@ -29,6 +29,9 @@ src/
 │   └── savePIA.m
 │
 ├── tests/                         # Scripts de teste manuais
+│   ├── inferenciaMamdani.m
+│   ├── inferenciaPIA.m
+│   ├── inferenciaSugeno.m
 │   ├── testQualitative.m
 │   └── testQuantitative.m
 │
